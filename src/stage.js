@@ -127,6 +127,64 @@ function computeTarget() {
 let footBase = 0;
 
 
+/* ───────────── 우투 ↔ 좌투 전환 ───────────── */
+// 좌우 대칭 자세(양손을 가슴 앞에 모아 글러브를 바꿔 끼는 동작). 모델이 좌우 대칭이라
+// 이 자세에서 좌우를 반전하면 눈에 띄지 않으므로, 살짝 뛰어오르는 순간에 반전합니다.
+function poseSwap() {
+  twist('Spine', X, 6);
+  twist('Spine1', X, 6);
+  twist('Neck', X, 14);
+  aim('LeftUpLeg', 'LeftLeg', V(0.12, -1, 0.14)); aim('LeftLeg', 'LeftFoot', V(0.03, -1, -0.12));
+  aim('RightUpLeg', 'RightLeg', V(-0.12, -1, 0.14)); aim('RightLeg', 'RightFoot', V(-0.03, -1, -0.12));
+  aim('LeftFoot', 'LeftToeBase', V(0.06, -0.3, 1)); aim('RightFoot', 'RightToeBase', V(-0.06, -0.3, 1));
+  aim('RightArm', 'RightForeArm', V(-0.3, -1, 0.3)); aim('RightForeArm', 'RightHand', V(0.6, 0.42, 0.68));
+  aim('LeftArm', 'LeftForeArm', V(0.3, -1, 0.3)); aim('LeftForeArm', 'LeftHand', V(-0.6, 0.42, 0.68));
+}
+
+const SWAP_IN = 0.42, SWAP_HOP = 0.26, SWAP_OUT = 0.5;
+let swap = null, sign = 1, scaleMag = 1;
+
+function startSwap(newSign) {
+  const from = new Map();
+  for (const [b] of rest) from.set(b, b.quaternion.clone());
+  const mid = computePose(poseSwap);
+  swap = { t: 0, from, fromFoot: footOffset, mid, sign: newSign, flipped: false };
+}
+
+function stepSwap(dt) {
+  const w = swap;
+  w.t += dt;
+  const t = w.t;
+  let hop = 0;
+  if (t < SWAP_IN) {
+    const e = smooth(t / SWAP_IN);
+    for (const [b, q] of w.mid.quats) b.quaternion.slerpQuaternions(w.from.get(b), q, e);
+    footOffset = w.fromFoot + (w.mid.foot - w.fromFoot) * e;
+  } else if (t < SWAP_IN + SWAP_HOP) {
+    for (const [b, q] of w.mid.quats) b.quaternion.copy(q);
+    footOffset = w.mid.foot;
+    const u = (t - SWAP_IN) / SWAP_HOP;
+    hop = Math.sin(Math.PI * u) * 0.09;
+    if (!w.flipped && u >= 0.5) { w.flipped = true; sign = w.sign; }
+  } else {
+    if (!w.flipped) { w.flipped = true; sign = w.sign; }
+    const e = smooth(clamp((t - SWAP_IN - SWAP_HOP) / SWAP_OUT, 0, 1));
+    for (const [b, q] of w.mid.quats) b.quaternion.slerpQuaternions(q, target.get(b), e);
+    footOffset = w.mid.foot + (footTarget - w.mid.foot) * e;
+    if (e >= 1) swap = null;
+  }
+  model.position.y = footOffset + hop;
+}
+
+// 전환 중 각도 게이지를 잠시 숨김 (0~1)
+function swapFade() {
+  if (!swap) return 1;
+  const t = swap.t;
+  if (t < SWAP_IN) return 1 - t / SWAP_IN;
+  if (t < SWAP_IN + SWAP_HOP) return 0;
+  return clamp((t - SWAP_IN - SWAP_HOP) / SWAP_OUT, 0, 1);
+}
+
 /* ───────────── 투구 동작 ───────────── */
 // 좌표: 홈플레이트 방향 +Z, 투수의 오른쪽(던지는 팔 쪽) -X, 위 +Y. 좌투는 피벗을 좌우 반전해 처리
 
@@ -342,6 +400,7 @@ function frame() {
   const k = 1 - Math.exp(-dt * 9), kr = 1 - Math.exp(-dt * 3.2), kv = 1 - Math.exp(-dt * 4);
   if (ready) {
     if (motion) stepMotion(dt);
+    else if (swap) stepSwap(dt);
     else {
       for (const [b, q] of target) b.quaternion.slerp(q, k);
       footOffset += (footTarget - footOffset) * k;
@@ -352,19 +411,20 @@ function frame() {
     view.rot += (goal.rot + sway - view.rot) * kr;
     pivot.rotation.y = view.rot;
     const hs = state.height / 180;
-    const sx = (state.hand === 'L' ? -1 : 1) * hs;
-    pivot.scale.x += (sx - pivot.scale.x) * k;
+    scaleMag += (hs - scaleMag) * k;
+    pivot.scale.x = sign * scaleMag;
     pivot.scale.y += (hs - pivot.scale.y) * k;
     pivot.scale.z += (hs - pivot.scale.z) * k;
 
     view.gauge += (goal.gauge - view.gauge) * kv;
+    const gv = view.gauge * swapFade();
     gauge.position.lerp(gauge.userData.goal, k);
     const active = zoneOf(state.angle).id;
     for (const m of gauge.children) {
-      if (m.userData.line) m.material.opacity = 0.35 * view.gauge;
+      if (m.userData.line) m.material.opacity = 0.35 * gv;
       else {
         const on = m.userData.zone.id === active;
-        m.material.opacity = (on ? 1 : 0.28) * view.gauge;
+        m.material.opacity = (on ? 1 : 0.28) * gv;
         m.scale.z = on ? 2.2 : 1;
       }
     }
@@ -473,6 +533,13 @@ export function init(canvas, b64, layout) {
 export function setPitcher(p) {
   Object.assign(state, p);
   computeTarget();
+  const want = state.hand === 'L' ? -1 : 1;
+  const pending = swap ? swap.sign : sign;
+  if (want !== pending) {
+    // 투구 동작 재생 중이거나 모델이 준비되기 전에는 바로 반전
+    if (!ready || motion) { sign = want; swap = null; }
+    else startSwap(want);
+  }
 }
 
 export function goTo(screen) {
@@ -493,6 +560,7 @@ function stopMotion() {
 // 구종별 투구 동작 재생 (반복). opts: { turn, mx, my, color, velo }
 export function playPitch(opts, onPhase) {
   if (!ready) return;
+  if (swap) { sign = swap.sign; swap = null; }
   const a = state.angle;
   const keys = TIMELINE.map(k => ({ t: k.t, ...computePose(() => KEYS[k.key](a, opts.turn)) }));
   const from = new Map();
