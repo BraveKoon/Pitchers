@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "릴리스 버전 (예: v1.0.0)"
+        required: true
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then TAG="$GITHUB_REF_NAME"; else TAG="$INPUT_VERSION"; fi
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "버전은 v1.2.3 형식이어야 합니다: $TAG"; exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # 실행에 필요한 파일만 묶어 index.html을 바로 열 수 있는 zip으로 만듭니다
+      - name: Package app
+        run: |
+          mkdir -p "dist/pitchers"
+          cp index.html style.css app.js stage.bundle.js model.js README.md dist/pitchers/
+          (cd dist && zip -qr "pitchers-${{ steps.v.outputs.tag }}.zip" pitchers)
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          gh release create "$TAG" "dist/pitchers-$TAG.zip" \
+            --target "$GITHUB_SHA" \
+            --title "Pitchers $TAG" \
+            --generate-notes

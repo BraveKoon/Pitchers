@@ -109,6 +109,27 @@
   </div>
 </section>
 
+<!-- 4. 투구 동작 -->
+<section class="screen step motion" id="s4" data-screen="4">
+  <div class="panel">
+    <p class="step-label">투구 동작</p>
+    <div class="motion-head">
+      <span class="abbr" id="mAbbr"></span>
+      <div><h2 id="mName"></h2><p class="sub" id="mSub"></p></div>
+    </div>
+    <ol class="phases" id="phases" aria-label="투구 단계"></ol>
+    <p class="cue"><strong>릴리스 요령</strong><span id="mCue"></span></p>
+    <div class="chips" id="mChips" aria-label="다른 구종"></div>
+    <div class="nav">
+      <button type="button" class="btn ghost" data-go="3">결과로</button>
+      <button type="button" class="btn ghost" id="mSlow" aria-pressed="false">슬로모션</button>
+      <button type="button" class="btn primary" id="mReplay">다시 보기</button>
+    </div>
+    <p class="hint">공의 궤적은 중력을 뺀 변화 방향이며, 잘 보이도록 크기를 과장했습니다.</p>
+    <p class="hint no-stage-msg">이 기기에서는 3D 동작을 표시할 수 없습니다.</p>
+  </div>
+</section>
+
 <script src="model.js"></script>
 <script src="stage.bundle.js"></script>
 <script src="app.js"></script>
