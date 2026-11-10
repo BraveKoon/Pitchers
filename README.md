@@ -7,6 +7,8 @@
 3. **키 · 구속** — 릴리스 높이, 익스텐션, 체감 구속
 4. **결과** — 주요 구종, 예상 구속, 무브먼트 차트, 난이도, 그립(실밥·손가락 위치 그림)
 
+5. **투구 동작** — 결과의 구종 카드에서 *투구 폼 보기*를 누르면 3D 모델이 세트 → 레그킥 → 스트라이드 → 코킹 → 릴리스 → 팔로스루 동작을 반복하고, 공이 그 구종의 변화 방향으로 날아갑니다. 슬로모션, 다시 보기, 다른 구종 바로 보기를 지원합니다.
+
 화면이 바뀔 때마다 3D 모델이 회전하며 전환됩니다.
 
 ## 실행
@@ -18,6 +20,13 @@
 `main`에 푸시하면 GitHub Actions(`.github/workflows/pages.yml`)가 GitHub Pages로 배포합니다.
 저장소 **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 한 번 설정해야 합니다.
 주소: https://bravekoon.github.io/Pitchers/
+
+## 릴리스
+
+GitHub Actions의 **Release** 워크플로(`.github/workflows/release.yml`)가 앱을 zip으로 묶어 GitHub 릴리스를 만듭니다.
+
+- Actions 탭 → Release → **Run workflow**에서 버전(예: `v1.1.0`)을 입력하거나
+- `v*` 형식의 태그를 푸시하면 실행됩니다.
 
 ## 개발
 

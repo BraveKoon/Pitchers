@@ -215,6 +215,20 @@ const PITCHES = {
   },
 };
 
+
+// 투구 동작: turn = 릴리스 때 전완 회전(+ 회외, − 회내), cue = 릴리스 요령
+const MOTION = {
+  FF: { turn: 0, cue: '손가락 끝으로 공 뒤를 똑바로 내려 긁어 강한 백스핀을 겁니다.' },
+  SI: { turn: -30, cue: '검지 쪽으로 살짝 눌러 주며, 손바닥이 바깥을 향하도록 놓습니다.' },
+  FC: { turn: 15, cue: '직구처럼 던지되 중지로 공의 바깥쪽을 살짝 밀어 줍니다.' },
+  SL: { turn: 35, cue: '손목을 세운 채 중지로 공 옆면을 자르듯 놓습니다. 손목을 억지로 비틀지 않습니다.' },
+  ST: { turn: 55, cue: '손등이 바깥을 향하게 하고 공 옆면을 쓸어 옆회전을 크게 겁니다.' },
+  CU: { turn: 75, cue: '엄지가 위를 향하게 손을 세우고, 중지로 공 앞쪽을 끌어내려 톱스핀을 겁니다.' },
+  CH: { turn: -50, cue: '직구와 같은 팔 스윙으로 던지며, 놓는 순간 손바닥을 바깥으로 돌려 속도를 줄입니다.' },
+  FS: { turn: -10, cue: '손목을 고정한 채 직구처럼 강하게 던지고, 공이 손가락 사이로 빠져나가게 합니다.' },
+};
+const PHASE_NAMES = ['세트', '레그킥', '스트라이드', '코킹', '릴리스', '팔로스루'];
+
 const DIFF_LABEL = ['', '입문', '쉬움', '보통', '어려움', '매우 어려움'];
 
 /* ───────────── 계산 ───────────── */
@@ -417,6 +431,9 @@ function gripSvg(id, hand) {
 const state = { angle: 50, height: 180, velo: 135, hand: 'R' };
 let activePitch = null;
 let screen = 0;
+let lastRanked = [];
+let watching = null;
+let slow = false;
 let stageOk = false;
 
 function moveText(mx, my) {
@@ -433,6 +450,7 @@ function render() {
   const form = formOf(s.angle);
   const ranked = rankPitches(form, s).map(p => ({ ...p, move: movement(p.id, s.angle, s.velo) }));
   if (!ranked.some(p => p.id === activePitch)) activePitch = null;
+  lastRanked = ranked;
   if (stageOk) Stage.setPitcher({ angle: s.angle, hand: s.hand, height: s.height });
 
   $('angleOut').textContent = `${s.angle}°`;
@@ -491,6 +509,7 @@ function render() {
         <div class="diff-row"><span>난이도</span><span class="bars" aria-hidden="true">${bars}</span><span>${DIFF_LABEL[d]}</span></div>
         <p>${esc(pt.diffNote)}</p>
       </div>
+      <button type="button" class="btn watch" data-watch="${p.id}">▶ 투구 폼 보기</button>
       <div class="grip">
         ${gripSvg(p.id, s.hand)}
         <div><h5>그립 잡는 법</h5><ol>${pt.grip.steps.map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>
@@ -514,12 +533,13 @@ function applyActive() {
 function stageLayout(sc, w, h) {
   const wide = w >= 900 && w > h;
   const table = wide
-    ? [{ sx: 0.2, sy: 0, dist: 5.0 }, { sx: -0.2, sy: 0.02, dist: 5.6 }, { sx: -0.2, sy: 0.02, dist: 5.6 }, { sx: -0.31, sy: 0, dist: 6.4 }]
-    : [{ sx: 0, sy: -0.03, dist: 6.6 }, { sx: 0, sy: 0.25, dist: 11 }, { sx: 0, sy: 0.25, dist: 11 }, { sx: 0, sy: 0.3, dist: 12 }];
+    ? [{ sx: 0.2, sy: 0, dist: 5.0 }, { sx: -0.2, sy: 0.02, dist: 5.6 }, { sx: -0.2, sy: 0.02, dist: 5.6 }, { sx: -0.31, sy: 0, dist: 6.4 }, { sx: -0.17, sy: 0.04, dist: 8.2 }]
+    : [{ sx: 0, sy: -0.03, dist: 6.6 }, { sx: 0, sy: 0.25, dist: 11 }, { sx: 0, sy: 0.25, dist: 11 }, { sx: 0, sy: 0.3, dist: 12 }, { sx: 0.04, sy: 0.27, dist: 13.5 }];
   return table[sc];
 }
 
 function goTo(n) {
+  const prev = screen;
   screen = n;
   document.body.dataset.screen = n;
   document.querySelectorAll('.screen').forEach(el => {
@@ -527,8 +547,40 @@ function goTo(n) {
     el.classList.toggle('active', on);
     el.inert = !on;
   });
-  if (n === 3) $('s3').scrollTop = 0;
+  if (n === 3 && prev !== 4) $('s3').scrollTop = 0;
+  if (n !== 4) watching = null;
   if (stageOk) Stage.goTo(n);
+}
+
+/* ───────────── 투구 동작 화면 ───────────── */
+
+function openMotion(id) {
+  const p = lastRanked.find(x => x.id === id) || lastRanked[0];
+  if (!p) return;
+  const pt = PITCHES[p.id], mo = MOTION[p.id];
+  const v = Math.round(state.velo * pt.ratio);
+  const [hx, vy] = moveText(p.move[0], p.move[1]);
+  watching = p.id;
+  $('s4').style.setProperty('--c', pt.color);
+  $('mAbbr').textContent = p.id;
+  $('mName').textContent = pt.ko;
+  $('mSub').textContent = `${formOf(state.angle).name} · 약 ${v}km/h · ${hx}, ${vy}`;
+  $('mCue').textContent = mo.cue;
+  $('mChips').innerHTML = lastRanked.map(x =>
+    `<button type="button" class="chip" data-pitch="${x.id}" aria-pressed="${x.id === p.id}" style="--c:${PITCHES[x.id].color}">${PITCHES[x.id].ko.split(' ')[0]}</button>`).join('');
+  setPhase(0);
+  if (screen !== 4) goTo(4);
+  if (stageOk) {
+    Stage.setSpeed(slow ? 0.35 : 1);
+    Stage.playPitch({ turn: mo.turn, mx: p.move[0], my: p.move[1], color: pt.color, velo: v }, setPhase);
+  }
+}
+
+function setPhase(i) {
+  document.querySelectorAll('#phases li').forEach((li, j) => {
+    li.classList.toggle('on', j === i);
+    li.classList.toggle('done', j < i);
+  });
 }
 
 function init() {
@@ -549,8 +601,23 @@ function init() {
     activePitch = activePitch === card.dataset.id ? null : card.dataset.id;
     applyActive();
   };
-  cards.addEventListener('click', e => toggle(e.target));
-  cards.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e.target); } });
+  cards.addEventListener('click', e => {
+    const w = e.target.closest('[data-watch]');
+    if (w) { openMotion(w.dataset.watch); return; }
+    toggle(e.target);
+  });
+  $('mChips').addEventListener('click', e => {
+    const c = e.target.closest('[data-pitch]');
+    if (c) openMotion(c.dataset.pitch);
+  });
+  $('mReplay').addEventListener('click', () => { if (stageOk) Stage.replay(); setPhase(0); });
+  $('mSlow').addEventListener('click', () => {
+    slow = !slow;
+    $('mSlow').setAttribute('aria-pressed', slow);
+    if (stageOk) Stage.setSpeed(slow ? 0.35 : 1);
+  });
+  $('phases').innerHTML = PHASE_NAMES.map(n => `<li>${n}</li>`).join('');
+  cards.addEventListener('keydown', e => { if (e.target.closest('button')) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e.target); } });
 
   render();
   goTo(0);
