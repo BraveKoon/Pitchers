@@ -13,6 +13,12 @@
 
 `index.html`을 브라우저로 열면 됩니다. 서버나 설치가 필요 없습니다.
 
+## 배포
+
+`main`에 푸시하면 GitHub Actions(`.github/workflows/pages.yml`)가 GitHub Pages로 배포합니다.
+저장소 **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 한 번 설정해야 합니다.
+주소: https://bravekoon.github.io/Pitchers/
+
 ## 개발
 
 3D 스테이지(`src/stage.js`)나 모델(`assets/pitcher.glb`)을 바꾼 뒤에는 다시 빌드합니다.
