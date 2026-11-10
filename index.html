@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#061024">
+<title>Pitchers</title>
+<meta name="description" content="팔 각도, 키, 평균 구속으로 알아보는 투구 폼별 주요 구종·구속·무브먼트·난이도·그립 가이드">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-screen="0">
+<canvas id="stage" aria-hidden="true"></canvas>
+
+<!-- 0. 시작 화면 -->
+<section class="screen splash" id="s0" data-screen="0">
+  <div class="splash-inner">
+    <p class="eyebrow">PITCHING FORM LAB</p>
+    <h1>Pitchers</h1>
+    <p class="lede">팔 각도와 키, 구속으로 찾는<br>나에게 맞는 구종과 그립</p>
+    <button type="button" class="btn primary big" data-go="1">시작하기</button>
+  </div>
+</section>
+
+<!-- 1. 팔 각도 -->
+<section class="screen step" id="s1" data-screen="1">
+  <div class="panel">
+    <p class="step-label">STEP 1 / 2 · 팔 각도</p>
+    <span class="form-chip"></span>
+    <h2 class="form-name"></h2>
+    <p class="form-desc"></p>
+
+    <div class="field">
+      <label for="angle">팔 각도 <output id="angleOut"></output></label>
+      <input type="range" id="angle" min="-45" max="90" step="1" value="50">
+      <div class="ticks"><span>언더</span><span>사이드</span><span>쓰리쿼터</span><span>오버</span></div>
+    </div>
+
+    <div class="field">
+      <span class="label">던지는 손</span>
+      <div class="seg" role="radiogroup" aria-label="던지는 손">
+        <button type="button" role="radio" data-hand="R" aria-checked="true">우투</button>
+        <button type="button" role="radio" data-hand="L" aria-checked="false">좌투</button>
+      </div>
+    </div>
+
+    <div class="nav">
+      <button type="button" class="btn ghost" data-go="0">이전</button>
+      <button type="button" class="btn primary" data-go="2">다음</button>
+    </div>
+  </div>
+</section>
+
+<!-- 2. 키 · 구속 -->
+<section class="screen step" id="s2" data-screen="2">
+  <div class="panel">
+    <p class="step-label">STEP 2 / 2 · 키와 구속</p>
+    <h2>체격과 구속</h2>
+
+    <div class="field">
+      <label for="height">키 <output id="heightOut"></output></label>
+      <input type="range" id="height" min="150" max="210" step="1" value="180">
+    </div>
+
+    <div class="field">
+      <label for="velo">평균 구속 (직구) <output id="veloOut"></output></label>
+      <input type="range" id="velo" min="90" max="160" step="1" value="135">
+    </div>
+
+    <dl class="stats"></dl>
+
+    <div class="nav">
+      <button type="button" class="btn ghost" data-go="1">이전</button>
+      <button type="button" class="btn primary" data-go="3">결과 보기</button>
+    </div>
+  </div>
+</section>
+
+<!-- 3. 결과 -->
+<section class="screen results" id="s3" data-screen="3">
+  <div class="sheet">
+    <header class="result-head">
+      <div>
+        <span class="form-chip"></span>
+        <h2 class="form-name"></h2>
+        <p class="sub" id="summary"></p>
+      </div>
+      <button type="button" class="btn ghost" data-go="1">다시 설정</button>
+    </header>
+    <p class="form-desc"></p>
+
+    <div class="block">
+      <h3>폼 프로필</h3>
+      <dl class="stats"></dl>
+      <ul class="notes" id="notes"></ul>
+      <p class="players" id="players"></p>
+    </div>
+
+    <div class="block">
+      <h3>무브먼트 차트</h3>
+      <svg id="chart" viewBox="0 0 380 380" role="img" aria-label="구종별 무브먼트"></svg>
+      <p class="hint">중력을 뺀 공의 변화량(cm) · 투수 시점 · 구종 카드를 누르면 강조됩니다</p>
+    </div>
+
+    <h3 class="section-title">이 폼의 주요 구종</h3>
+    <div class="cards" id="cards"></div>
+
+    <p class="disclaimer">모든 수치는 팔 각도·키·구속으로 계산한 일반적인 추정치입니다. 실제 구속과 무브먼트는 회전수, 손목 각도, 유연성에 따라 크게 달라지니 참고용으로만 사용하세요. 성장기 선수는 변화구를 무리하게 연습하지 말고 지도자와 상의하세요.</p>
+    <button type="button" class="btn ghost" data-go="0">처음으로</button>
+  </div>
+</section>
+
+<script src="model.js"></script>
+<script src="stage.bundle.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

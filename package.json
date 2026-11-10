@@ -1,0 +1,11 @@
+{
+  "name": "pitchers",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "three": "0.160.0"
+  }
+}
