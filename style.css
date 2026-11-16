@@ -194,6 +194,21 @@ body.orbiting #stage { cursor: grabbing; }
 .no-stage-msg { display: none; }
 .no-stage .no-stage-msg { display: block; }
 
+/* 투구 동작 / 3D 그립 탭 */
+.tabs { display: grid; grid-template-columns: 1fr 1fr; margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.tabs button { font: inherit; font-weight: 700; font-size: 14px; padding: 8px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.tabs button[aria-selected=true] { background: var(--c); color: var(--accent-ink); }
+.grip-steps { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: #ffffff08; border: 1px solid var(--line); font-size: 14px; }
+.grip-steps strong { display: block; font-size: 12px; color: #8fbcff; margin-bottom: 4px; }
+.grip-steps ol { margin: 0; padding-left: 18px; }
+.grip-steps li { margin-bottom: 3px; }
+.panel[data-mode=motion] .grip-steps, .panel[data-mode=motion] .grip-only,
+.panel[data-mode=grip] .phases, .panel[data-mode=grip] .cue, .panel[data-mode=grip] .controls,
+.panel[data-mode=grip] .motion-only, .panel[data-mode=grip] .wide-only { display: none; }
+.grip-fig img { width: 170px; height: 170px; display: block; border-radius: 12px; background: radial-gradient(circle at 50% 40%, #16306a, #081736); border: 1px solid var(--line); }
+.btn.grip3d { width: 170px; margin-top: 8px; padding: 7px 8px; font-size: 13px; border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
+.no-stage .btn.grip3d { display: none; }
+
 /* 세로 화면 (모바일) */
 @media (max-width: 899px), (orientation: portrait) {
   .splash { flex-direction: column; justify-content: space-between; align-items: stretch; text-align: center; }
@@ -230,7 +245,7 @@ body.orbiting #stage { cursor: grabbing; }
 }
 @media (max-width: 400px) {
   .grip { grid-template-columns: 1fr; }
-  .grip svg { margin: 0 auto; }
+  .grip svg, .grip-fig img, .btn.grip3d { margin-left: auto; margin-right: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   .screen, .screen.active { transition-duration: .01s; transition-delay: 0s; }
