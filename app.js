@@ -434,6 +434,7 @@ let screen = 0;
 let lastRanked = [];
 let watching = null;
 let slow = false;
+let paused = false;
 let stageOk = false;
 
 function moveText(mx, my) {
@@ -548,7 +549,7 @@ function goTo(n) {
     el.inert = !on;
   });
   if (n === 3 && prev !== 4) $('s3').scrollTop = 0;
-  if (n !== 4) watching = null;
+  if (n !== 4) { watching = null; if (paused) setPaused(false); }
   if (stageOk) Stage.goTo(n);
 }
 
@@ -569,11 +570,39 @@ function openMotion(id) {
   $('mChips').innerHTML = lastRanked.map(x =>
     `<button type="button" class="chip" data-pitch="${x.id}" aria-pressed="${x.id === p.id}" style="--c:${PITCHES[x.id].color}">${PITCHES[x.id].ko.split(' ')[0]}</button>`).join('');
   setPhase(0);
+  setPaused(false);
   if (screen !== 4) goTo(4);
   if (stageOk) {
     Stage.setSpeed(slow ? 0.35 : 1);
     Stage.playPitch({ turn: mo.turn, mx: p.move[0], my: p.move[1], color: pt.color, velo: v }, setPhase);
   }
+}
+
+function setPaused(p) {
+  paused = p;
+  $('mPause').textContent = p ? '재생' : '일시정지';
+  $('mPause').setAttribute('aria-pressed', p);
+  if (stageOk) Stage.setPaused(p);
+}
+
+// 투구 동작 화면: 빈 곳을 끌어서 모델을 360° 둘러보기
+function bindOrbit() {
+  const el = $('stage');
+  let last = null;
+  el.addEventListener('pointerdown', e => {
+    if (screen !== 4) return;
+    last = [e.clientX, e.clientY];
+    el.setPointerCapture(e.pointerId);
+    document.body.classList.add('orbiting');
+  });
+  el.addEventListener('pointermove', e => {
+    if (!last || !stageOk) return;
+    Stage.orbit((e.clientX - last[0]) * 0.009, (e.clientY - last[1]) * 0.006);
+    last = [e.clientX, e.clientY];
+  });
+  const end = () => { last = null; document.body.classList.remove('orbiting'); };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
 }
 
 function setPhase(i) {
@@ -610,7 +639,9 @@ function init() {
     const c = e.target.closest('[data-pitch]');
     if (c) openMotion(c.dataset.pitch);
   });
-  $('mReplay').addEventListener('click', () => { if (stageOk) Stage.replay(); setPhase(0); });
+  $('mReplay').addEventListener('click', () => { if (stageOk) Stage.replay(); setPhase(0); setPaused(false); });
+  $('mPause').addEventListener('click', () => setPaused(!paused));
+  bindOrbit();
   $('mSlow').addEventListener('click', () => {
     slow = !slow;
     $('mSlow').setAttribute('aria-pressed', slow);
