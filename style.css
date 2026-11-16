@@ -185,7 +185,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 30px; marg
 }
 .chip[aria-pressed=true] { background: var(--c); border-color: var(--c); color: var(--accent-ink); }
 #mSlow[aria-pressed=true] { background: #ffffff18; border-color: #8fbcff; }
-.motion .nav .primary { flex: 1; }
+.motion .nav .btn { flex: 1; padding-left: 8px; padding-right: 8px; white-space: nowrap; }
+#mPause[aria-pressed=true] { background: #ffffff18; border-color: #8fbcff; }
+.motion-top { display: flex; justify-content: space-between; align-items: center; }
+.btn.back { font-size: 13px; padding: 5px 12px; border-radius: 99px; }
+body[data-screen="4"] #stage { cursor: grab; touch-action: none; }
+body.orbiting #stage { cursor: grabbing; }
 .no-stage-msg { display: none; }
 .no-stage .no-stage-msg { display: block; }
 
@@ -209,6 +214,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 30px; marg
   .nav { margin-top: 18px; }
   .form-chip { margin-top: 8px; }
   .motion-head h2 { font-size: 21px; }
+  .wide-only { display: none; }
+  .motion-head { margin-top: 6px; }
+  .chips { margin-top: 10px; }
   .phases { margin-top: 12px; }
   .phases li { font-size: 10.5px; }
   .cue { margin-top: 12px; font-size: 13px; padding: 10px 12px; }
