@@ -221,7 +221,7 @@ function forearmTurn(deg) {
 // 양손을 가슴 앞에서 모음: 팔꿈치는 몸 옆에 두고 전완만 안쪽으로 모아 두 팔이 서로 겹치지 않게 함
 function handsAtChest(yaw) {
   // 두 손이 서로 파고들지 않을 때까지 전완을 덜 모음: 글러브 손이 공 쥔 손 옆에 닿을 듯 놓임
-  for (let z = 0.42; z >= 0.06; z -= 0.03) {
+  for (let z = 0.42; z >= -0.1; z -= 0.02) {
     armR(yawV(V(-0.24, -1, -0.08), yaw + 90), yawV(V(-0.84, 0.3, z), yaw + 90));
     armL(yawV(V(-0.24, -1, 0.08), yaw + 90), yawV(V(-0.84, 0.36, -z), yaw + 90));
     // 공 쥔 손은 손바닥이 글러브 손 쪽(안쪽)을 보게 돌림
@@ -231,7 +231,8 @@ function handsAtChest(yaw) {
   grip(1);
 }
 
-const HAND_PTS = ['Hand', 'HandIndex1', 'HandMiddle1', 'HandPinky1', 'HandIndex3', 'HandMiddle3', 'HandPinky3', 'HandThumb3'];
+const HAND_PTS = ['Hand', 'HandThumb2', 'HandThumb4'].concat(
+  ['Index', 'Middle', 'Ring', 'Pinky'].flatMap(f => [1, 2, 3, 4].map(i => 'Hand' + f + i)));
 // 두 손 사이 여유(m). 음수면 손끼리 또는 글러브 손과 공이 겹침
 function handGap() {
   const pts = side => HAND_PTS.map(n => bone(side + n)).filter(Boolean).map(b => b.getWorldPosition(V(0, 0, 0)));
@@ -239,8 +240,8 @@ function handGap() {
   const ballC = ballHold();
   let gap = Infinity;
   for (const l of L) {
-    gap = Math.min(gap, l.distanceTo(ballC) - (BALL_R + 0.022));
-    for (const r of R) gap = Math.min(gap, l.distanceTo(r) - 0.05);
+    gap = Math.min(gap, l.distanceTo(ballC) - (BALL_R + 0.05));
+    for (const r of R) gap = Math.min(gap, l.distanceTo(r) - 0.1); // 관절 중심 기준: 손 두께 + 보이는 틈
   }
   return gap;
 }
