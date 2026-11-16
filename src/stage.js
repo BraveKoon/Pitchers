@@ -21,8 +21,9 @@ let ready = false;
 
 const state = { angle: 50, hand: 'R', height: 180, pose: 'stand', screen: 0 };
 const PITCH0 = 0.055;
-const view = { sx: 0, sy: 0, dist: 5.5, rot: 0.35, gauge: 0, pitch: PITCH0 };
-const goal = { sx: 0, sy: 0, dist: 5.5, rot: 0.35, gauge: 0, pitch: PITCH0 };
+const view = { sx: 0, sy: 0, dist: 5.5, rot: 0.35, gauge: 0, pitch: PITCH0, az: 0, target: V(0, 0.95, 0) };
+const goal = { sx: 0, sy: 0, dist: 5.5, rot: 0.35, gauge: 0, pitch: PITCH0, az: 0, target: V(0, 0.95, 0) };
+const HOME = V(0, 0.95, 0);
 let layoutFn = () => ({ sx: 0, sy: 0, dist: 5.5 });
 
 const ROT = [0.4, Math.PI, Math.PI + 2.2, Math.PI * 3, Math.PI * 4 + 0.5];
@@ -120,7 +121,7 @@ function computePose(poseFn) {
 
 function computeTarget() {
   if (!ready) return;
-  const p = computePose(state.pose === 'pitch' ? () => posePitch(state.angle) : poseStand);
+  const p = computePose(state.pose === 'pitch' ? () => posePitch(state.angle) : state.pose === 'show' ? poseShow : poseStand);
   target = p.quats;
   footTarget = p.foot;
   if (gauge) gauge.userData.goal = p.sh;
@@ -228,7 +229,7 @@ function handsAtChest(yaw) {
     facePalm(yawV(V(-0.25, -0.2, 1), yaw + 90));
     if (handGap() >= 0) break;
   }
-  grip(1);
+  holdBall();
 }
 
 const HAND_PTS = ['Hand', 'HandThumb2', 'HandThumb4'].concat(
@@ -275,25 +276,90 @@ function facePalm(dir) {
 }
 
 // 손가락을 공 둘레로 감음 (k: 1 = 공을 쥠, 0 = 편 손)
+// 편 손에서 k만큼 굽힘 (릴리스·팔로스루용, 공 없이)
 function grip(k) {
-  const { d, w, n } = handFrame();
+  const { d, n } = handFrame();
   const axis = d.clone().cross(n).normalize(); // 이 축으로 +회전하면 손가락이 손바닥 쪽으로 굽음
-  const curl = (f, a1, a2, a3) => {
+  for (const [f, a1, a2, a3] of [['Index', 30, 42, 26], ['Middle', 30, 42, 26], ['Ring', 52, 62, 40], ['Pinky', 58, 66, 44]]) {
     twist('RightHand' + f + '1', axis, a1 * k);
     twist('RightHand' + f + '2', axis, a2 * k);
     twist('RightHand' + f + '3', axis, a3 * k);
-  };
-  // 검지·중지는 공 위로 벌려 얹고, 약지·새끼는 옆에서 받침
-  twist('RightHandIndex1', n, 7 * k * palmSign);
-  curl('Index', 30, 42, 26);
-  curl('Middle', 30, 42, 26);
-  curl('Ring', 52, 62, 40);
-  curl('Pinky', 58, 66, 44);
-  if (k > 0.5) {
-    // 엄지는 공 아래를 받침
-    aim('RightHandThumb1', 'RightHandThumb2', n.clone().multiplyScalar(0.85).addScaledVector(d, 0.5).addScaledVector(w, 0.15));
-    aim('RightHandThumb2', 'RightHandThumb3', n.clone().multiplyScalar(0.35).addScaledVector(d, 0.8).addScaledVector(w, 0.5));
   }
+}
+
+/* 구종별 그립
+   idx/mid/ring/pinky: 손가락을 새끼 쪽(+)·엄지 쪽(−)으로 벌리는 각도
+   side/fwd: 공을 새끼 쪽·손끝 쪽으로 옮기는 거리(m),  view: 실밥 방향,  circle: 서클 체인지업 */
+const DEFAULT_GRIP = { idx: -8, mid: 3, ring: 4, pinky: 8, side: 0, fwd: 0, view: { polar: 90, az: 90, roll: 90 } };
+let curGrip = DEFAULT_GRIP;
+const FINGER_R = 0.0105; // 손가락 굵기의 절반
+
+function fingerBones(f) { return [1, 2, 3, 4].map(i => bone('RightHand' + f + i)); }
+
+// 손가락을 기본 자세로 되돌린 뒤 옆으로 벌리고, 뿌리 마디부터 차례로 공 표면에 닿을 때까지 굽혀 공을 감쌈.
+// c가 없으면 maxes 각도까지 그대로 굽힘
+function wrapFinger(f, sideDeg, c, fr, maxes) {
+  const bs = fingerBones(f);
+  const hand = bone('RightHand');
+  const sgn = fr.n.clone().cross(fr.d).dot(fr.w) > 0 ? 1 : -1;
+  const p = V(0, 0, 0);
+  for (const b of bs.slice(0, 3)) b.quaternion.copy(rest.get(b));
+  hand.updateMatrixWorld(true);
+  twist('RightHand' + f + '1', fr.n, sgn * sideDeg);
+  for (let j = 0; j < 3; j++) {
+    const name = 'RightHand' + f + (j + 1);
+    if (!c) { twist(name, fr.axis, maxes[j]); continue; }
+    for (let ang = 0; ang < maxes[j]; ang += 3) {
+      if (bs[j + 1].getWorldPosition(p).distanceTo(c) <= BALL_R + FINGER_R) break;
+      twist(name, fr.axis, 3);
+    }
+  }
+}
+
+function aimAt(name, child, point) {
+  aim(name, child, point.clone().sub(bone(name).getWorldPosition(V(0, 0, 0))));
+}
+
+// 현재 구종(curGrip)의 그립으로 공을 쥠
+function holdBall() {
+  const g = curGrip;
+  const fr = handFrame();
+  fr.axis = fr.d.clone().cross(fr.n).normalize();
+  const c = ballCenter(fr, g);
+  if (g.circle) {
+    // 서클 체인지업: 검지는 깊게 말아 엄지와 동그라미를 만들고 중지·약지·새끼가 공을 감쌈
+    wrapFinger('Index', g.idx, null, fr, [70, 92, 62]);
+  } else {
+    wrapFinger('Index', g.idx, c, fr, [80, 95, 70]);
+  }
+  wrapFinger('Middle', g.mid, c, fr, [80, 95, 70]);
+  wrapFinger('Ring', g.ring, c, fr, [78, 90, 62]);
+  wrapFinger('Pinky', g.pinky, c, fr, [80, 92, 64]);
+  // 엄지: 검지·중지 반대편(공 아래)을 받침. 서클 체인지업은 검지 끝에 닿음
+  let tip;
+  if (g.circle) tip = bone('RightHandIndex4').getWorldPosition(V(0, 0, 0));
+  else {
+    const t = fr.n.clone().multiplyScalar(0.72).addScaledVector(fr.d, -0.55).addScaledVector(fr.w, -0.42 + (g.thumb || 0)).normalize();
+    tip = c.clone().addScaledVector(t, BALL_R + FINGER_R);
+  }
+  aimAt('RightHandThumb1', 'RightHandThumb2', tip);
+  aimAt('RightHandThumb2', 'RightHandThumb3', tip);
+  aimAt('RightHandThumb3', 'RightHandThumb4', tip);
+}
+
+// 공 중심: 검지·중지 뿌리 사이 앞, 손바닥 쪽으로 반지름만큼 띄운 곳
+function ballCenter(fr, g) {
+  return fr.knuckle.clone().addScaledVector(fr.d, 0.032 + g.fwd)
+    .addScaledVector(fr.w, -0.008 + g.side).addScaledVector(fr.n, BALL_R + FINGER_R + 0.001);
+}
+
+// 그립을 보여 주는 자세: 팔꿈치를 굽혀 손을 어깨 옆 높이로 들고 손바닥이 정면을 향함
+function poseShow() {
+  aim('LeftArm', 'LeftForeArm', V(0.2, -1, 0.02));
+  aim('LeftForeArm', 'LeftHand', V(0.12, -1, 0.22));
+  armR(V(-0.78, -0.42, 0.45), V(-0.12, 1, 0.22));
+  facePalm(V(0.1, 0, 1));
+  holdBall();
 }
 
 const KEYS = {
@@ -311,7 +377,7 @@ const KEYS = {
     trunk(-85, -6, 0);
     legs(V(-0.05, -0.5, 0.86), V(0, -0.92, 0.38), V(-0.08, -0.75, -0.62), V(0, -0.85, -0.45), V(0, -0.35, 1), V(-1, -0.3, 0));
     armR(V(0.05, -0.4, -1), V(0, -0.15, -1));
-    grip(1);
+    holdBall();
     armL(V(0, 0.12, 1), V(0, 0.25, 1));
   },
   cock(angle) {
@@ -322,7 +388,7 @@ const KEYS = {
     const upper = R.clone().multiplyScalar(c).add(U.clone().multiplyScalar(s));
     const P = U.clone().multiplyScalar(c).sub(R.clone().multiplyScalar(s));
     armR(upper, B.clone().multiplyScalar(0.85).add(P.multiplyScalar(0.55)));
-    grip(1);
+    holdBall();
     armL(V(0.15, 0.05, 1), V(0.45, 0.15, 0.8));
   },
   // 가속: 몸통이 먼저 돌고 팔꿈치가 앞서 나오며 전완은 뒤로 젖혀진 상태
@@ -334,7 +400,7 @@ const KEYS = {
     const upper = R.clone().multiplyScalar(c).add(U.clone().multiplyScalar(s)).add(Fw.multiplyScalar(0.22));
     const P = U.clone().multiplyScalar(c).sub(R.clone().multiplyScalar(s));
     armR(upper, upper.clone().multiplyScalar(0.45).add(B.multiplyScalar(0.8)).add(P.multiplyScalar(0.25)));
-    grip(1);
+    holdBall();
     armL(V(0.4, -0.55, 0.45), V(-0.35, 0.45, 0.65));
   },
   release(angle, turn) {
@@ -376,8 +442,9 @@ let motion = null, fx = null, ball = null, dots = [], refLine = null, speed = 1;
 function buildFx() {
   fx = new THREE.Group();
   fx.visible = false;
-  ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 24, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, emissive: 0x223355, emissiveIntensity: 0.3 }));
+  ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 40, 28), new THREE.MeshStandardMaterial({ color: 0xf7f3e8, roughness: 0.6, emissive: 0x223355, emissiveIntensity: 0.18 }));
   ball.castShadow = true;
+  ball.add(buildSeams());
   fx.add(ball);
   for (let i = 0; i < 36; i++) {
     const d = new THREE.Mesh(new THREE.SphereGeometry(0.024, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
@@ -391,13 +458,68 @@ function buildFx() {
 
 const smooth = x => x * x * (3 - 2 * x);
 
-// 공을 쥐는 위치 (fx 로컬 좌표): 손가락 뿌리 앞, 손바닥 쪽으로 공 반지름만큼 띄운 곳
-function ballHold() {
+// 야구공 실밥: 단위 구 위의 실밥 곡선(2D 그립 그림과 같은 식)을 따라 붉은 솔기와 V자 땀을 만듦
+function seamPoint(t) {
+  const a = 0.4;
+  const th = Math.PI / 2 - (Math.PI / 2 - a) * Math.cos(t);
+  const ph = t / 2 + a * Math.sin(2 * t);
+  return V(Math.sin(th) * Math.cos(ph), Math.sin(th) * Math.sin(ph), Math.cos(th));
+}
+function buildSeams() {
+  const g = new THREE.Group();
+  const R = BALL_R * 1.004, red = new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: 0.7 });
+  const pts = [];
+  for (let i = 0; i < 240; i++) pts.push(seamPoint(i / 240 * 4 * Math.PI).multiplyScalar(R));
+  const curve = new THREE.CatmullRomCurve3(pts, true);
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 320, BALL_R * 0.012, 5, true), red));
+  const N = 108, stitch = new THREE.CylinderGeometry(BALL_R * 0.014, BALL_R * 0.014, 1, 4);
+  const inst = new THREE.InstancedMesh(stitch, red, N * 2);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = V(0, 1, 0);
+  for (let i = 0; i < N; i++) {
+    const t = i / N * 4 * Math.PI;
+    const p = seamPoint(t), tan = seamPoint(t + 0.01).sub(p).normalize();
+    const perp = p.clone().cross(tan).normalize();
+    for (const sd of [1, -1]) {
+      const a = p.clone(), b = p.clone().addScaledVector(perp, sd * 0.1).addScaledVector(tan, 0.045).normalize();
+      const mid = a.clone().add(b).multiplyScalar(0.5 * R * 1.004), dir = b.clone().sub(a);
+      const len = dir.length() * R;
+      q.setFromUnitVectors(up, dir.normalize());
+      m.compose(mid, q, V(1, len, 1));
+      inst.setMatrixAt(i * 2 + (sd > 0 ? 0 : 1), m);
+    }
+  }
+  g.add(inst);
+  return g;
+}
+
+// 손 기준 축을 fx 로컬 좌표로 계산 (좌우 반전과 무관하게 일정)
+function handFrameLocal() {
   const loc = n => fx.worldToLocal(bone(n).getWorldPosition(V(0, 0, 0)));
   const h = loc('RightHand'), m = loc('RightHandMiddle1'), i = loc('RightHandIndex1'), p = loc('RightHandPinky1');
   const d = m.clone().sub(h).normalize();
-  const n = d.clone().cross(p.sub(i).normalize()).normalize().multiplyScalar(palmSign);
-  return m.addScaledVector(d, 0.03).addScaledVector(i.sub(m), 0.35).addScaledVector(n, BALL_R + 0.012);
+  const w = p.sub(i).normalize();
+  const n = d.clone().cross(w).normalize().multiplyScalar(palmSign);
+  return { d, w, n, knuckle: m };
+}
+
+// 공을 쥐는 위치 (fx 로컬 좌표)
+function ballHold() { return ballCenter(handFrameLocal(), curGrip); }
+
+// 실밥 방향: 손등 쪽에서 손가락을 위로 두고 본 화면(2D 그립 그림과 같은 기준)에 맞춰 공을 돌림
+const _mb = new THREE.Matrix4(), _mv = new THREE.Matrix4();
+function ballQuat(out) {
+  const fr = handFrameLocal(), v = curGrip.view;
+  const Y = fr.d, Z = fr.n.clone().negate();
+  const Xa = Y.clone().cross(Z).normalize();
+  const Za = Xa.clone().cross(Y).normalize();
+  _mb.makeBasis(Xa, Y, Za);
+  const z = V(Math.sin(rad(v.polar)) * Math.cos(rad(v.az)), Math.sin(rad(v.polar)) * Math.sin(rad(v.az)), Math.cos(rad(v.polar)));
+  const ref = Math.abs(z.z) > 0.95 ? V(1, 0, 0) : V(0, 0, 1);
+  const x = ref.clone().cross(z).normalize(), y = z.clone().cross(x);
+  const c = Math.cos(rad(v.roll)), sn = Math.sin(rad(v.roll));
+  const xr = x.clone().multiplyScalar(c).addScaledVector(y, sn), yr = y.clone().multiplyScalar(c).addScaledVector(x, -sn);
+  _mv.makeBasis(xr, yr, z).transpose();
+  return out.setFromRotationMatrix(_mb.multiply(_mv));
 }
 
 function pathAt(u) {
@@ -456,6 +578,7 @@ function stepMotion(dt) {
   if (t < RELEASE_T) {
     ball.visible = true;
     ball.position.copy(ballHold());
+    ballQuat(ball.quaternion);
   } else {
     if (!m.released) {
       m.released = true;
@@ -519,9 +642,16 @@ function frame() {
       footOffset += (footTarget - footOffset) * k;
       model.position.y = footOffset;
     }
+    if (gripMode) {
+      // 그립 보기: 공을 손에 두고 카메라가 공을 따라감
+      pivot.updateMatrixWorld(true);
+      ball.position.copy(ballHold());
+      ballQuat(ball.quaternion);
+      ball.getWorldPosition(goal.target);
+    }
 
     const sway = state.screen === 0 ? Math.sin(clock.elapsedTime * 0.5) * 0.35 : 0;
-    view.rot += (goal.rot + sway - view.rot) * kr;
+    view.rot += (goal.rot + sway - view.rot) * (gripMode ? kv : kr);
     pivot.rotation.y = view.rot;
     const hs = state.height / 180;
     scaleMag += (hs - scaleMag) * k;
@@ -547,8 +677,11 @@ function frame() {
   view.dist += (goal.dist - view.dist) * kv;
   const w = renderer.domElement.clientWidth, h = renderer.domElement.clientHeight;
   view.pitch += (goal.pitch - view.pitch) * kv;
-  camera.position.set(0, 0.95 + view.dist * Math.sin(view.pitch), view.dist * Math.cos(view.pitch));
-  camera.lookAt(0, 0.95, 0);
+  view.az += (goal.az - view.az) * kv;
+  view.target.lerp(goal.target, kv);
+  const cp = Math.cos(view.pitch), tg = view.target;
+  camera.position.set(tg.x + view.dist * Math.sin(view.az) * cp, tg.y + view.dist * Math.sin(view.pitch), tg.z + view.dist * Math.cos(view.az) * cp);
+  camera.lookAt(tg);
   camera.setViewOffset(w, h, -view.sx * w, view.sy * h, w, h);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -575,7 +708,7 @@ export function init(canvas, b64, layout) {
 
   scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x061024, 9, 22);
-  camera = new THREE.PerspectiveCamera(30, 1, 0.1, 60);
+  camera = new THREE.PerspectiveCamera(30, 1, 0.05, 60);
   clock = new THREE.Clock();
 
   scene.add(new THREE.HemisphereLight(0xbcd6ff, 0x0a1430, 1.1));
@@ -659,6 +792,7 @@ export function setPitcher(p) {
 
 export function goTo(screen) {
   if (screen !== 4) stopMotion();
+  leaveGrip();
   state.screen = screen;
   state.pose = POSE[screen];
   goal.rot = ROT[screen];
@@ -673,10 +807,48 @@ function stopMotion() {
   if (fx) fx.visible = false;
 }
 
+let gripMode = false;
+function leaveGrip() {
+  if (!gripMode) return;
+  gripMode = false;
+  goal.az = 0;
+  goal.target.copy(HOME);
+  goal.rot = ROT[4];
+  goal.pitch = PITCH0;
+  Object.assign(goal, layoutFn(4, renderer.domElement.clientWidth, renderer.domElement.clientHeight));
+  if (fx) fx.visible = false;
+}
+
+// 그립 보기: 투수가 손을 들어 공 쥔 모양을 보여 주고 카메라가 손으로 다가감. 끌어서 돌려 볼 수 있음
+export function showGrip(spec) {
+  if (!ready) return;
+  if (swap) { sign = swap.sign; swap = null; }
+  motion = null;
+  curGrip = { ...DEFAULT_GRIP, ...spec };
+  state.pose = 'show';
+  computeTarget();
+  if (!gripMode) {
+    gripMode = true;
+    const c = renderer.domElement;
+    goal.dist = c.clientWidth < c.clientHeight ? 1.0 : 0.72;
+    goal.rot = ROT[4] - 0.5;      // 투수가 정면을 봄
+    goal.az = sign * (Math.PI - 0.55);     // 손등 쪽 비스듬히에서 시작
+    goal.pitch = 0.18;
+  }
+  for (const d of dots) d.material.opacity = 0;
+  refLine.material.opacity = 0;
+  ball.visible = true;
+  fx.visible = true;
+}
+
 // 구종별 투구 동작 재생 (반복). opts: { turn, mx, my, color, velo }
 export function playPitch(opts, onPhase) {
   if (!ready) return;
   if (swap) { sign = swap.sign; swap = null; }
+  leaveGrip();
+  state.pose = 'pitch';
+  computeTarget();
+  curGrip = { ...DEFAULT_GRIP, ...(opts.grip || {}) };
   const a = state.angle;
   const keys = TIMELINE.map(k => ({ t: k.t, ...computePose(() => KEYS[k.key](a, opts.turn)) }));
   // 이웃 키의 쿼터니언 부호를 맞춰 스플라인이 먼 길로 돌지 않게 함
@@ -718,8 +890,62 @@ export function setPaused(p) { paused = p; }
 // 투구 동작 화면에서 끌어서 둘러보기: dx = 좌우 회전(rad), dy = 위아래 각도(rad)
 export function orbit(dx, dy) {
   if (state.screen !== 4) return;
+  if (gripMode) {
+    goal.az = view.az = goal.az - dx;
+    goal.pitch = view.pitch = clamp(goal.pitch + dy, -1.35, 1.35);
+    return;
+  }
   goal.rot += dx;
   view.rot = goal.rot;
   goal.pitch = clamp(goal.pitch + dy, -0.12, 1.25);
   view.pitch = goal.pitch;
+}
+
+// 구종별 그립을 손등 쪽에서 본 정사각형 이미지(data URL)로 렌더링 — 결과 카드용
+export function gripThumbs(specs, px = 340) {
+  if (!ready) return [];
+  const cv = renderer.domElement, W = cv.width, H = cv.height, S = Math.min(W, H);
+  if (!S) return [];
+  const saved = new Map();
+  for (const [b] of rest) saved.set(b, b.quaternion.clone());
+  const sv = { rot: pivot.rotation.y, y: model.position.y, fxv: fx.visible, bv: ball.visible, grip: curGrip, gv: gauge.visible,
+    bp: ball.position.clone(), bq: ball.quaternion.clone() };
+  const theta = rad(22), aspect = W / H;
+  const cam = new THREE.PerspectiveCamera(aspect >= 1 ? 22 : 2 * Math.atan(Math.tan(theta / 2) / aspect) * 180 / Math.PI, aspect, 0.02, 30);
+  const out = document.createElement('canvas');
+  out.width = out.height = px;
+  const ctx = out.getContext('2d');
+  pivot.rotation.y = 0;
+  gauge.visible = false;
+  for (const d of dots) d.visible = false;
+  refLine.visible = false;
+  fx.visible = true; ball.visible = true;
+  const res = [];
+  for (const spec of specs) {
+    curGrip = { ...DEFAULT_GRIP, ...spec };
+    const pose = computePose(poseShow);
+    for (const [b, q] of pose.quats) b.quaternion.copy(q);
+    model.position.y = pose.foot;
+    pivot.updateMatrixWorld(true);
+    ball.position.copy(ballHold());
+    ballQuat(ball.quaternion);
+    pivot.updateMatrixWorld(true);
+    const fr = handFrameLocal();
+    const dW = fr.d.transformDirection(fx.matrixWorld), nW = fr.n.transformDirection(fx.matrixWorld);
+    const bw = ball.getWorldPosition(V(0, 0, 0));
+    cam.position.copy(bw).addScaledVector(nW, -0.4).addScaledVector(dW, 0.07);
+    cam.up.copy(dW);
+    cam.lookAt(bw.addScaledVector(dW, -0.012));
+    renderer.render(scene, cam);
+    ctx.clearRect(0, 0, px, px);
+    ctx.drawImage(cv, (W - S) / 2, (H - S) / 2, S, S, 0, 0, px, px);
+    res.push(out.toDataURL('image/png'));
+  }
+  for (const [b, q] of saved) b.quaternion.copy(q);
+  pivot.rotation.y = sv.rot; model.position.y = sv.y; fx.visible = sv.fxv; ball.visible = sv.bv; curGrip = sv.grip; gauge.visible = sv.gv;
+  ball.position.copy(sv.bp); ball.quaternion.copy(sv.bq);
+  for (const d of dots) d.visible = true;
+  refLine.visible = true;
+  pivot.updateMatrixWorld(true);
+  return res;
 }

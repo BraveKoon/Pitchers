@@ -227,6 +227,18 @@ const MOTION = {
   CH: { turn: -50, cue: '직구와 같은 팔 스윙으로 던지며, 놓는 순간 손바닥을 바깥으로 돌려 속도를 줄입니다.' },
   FS: { turn: -10, cue: '손목을 고정한 채 직구처럼 강하게 던지고, 공이 손가락 사이로 빠져나가게 합니다.' },
 };
+// 3D 그립: 손가락을 새끼 쪽(+)·엄지 쪽(−)으로 벌리는 각도와 공을 옮기는 거리(m)
+const GRIP3D = {
+  FF: { idx: -8, mid: 4 },
+  SI: { idx: -5, mid: 3 },
+  FC: { idx: -3, mid: 1, side: -0.008 },
+  SL: { idx: -1, mid: 1, side: -0.012 },
+  ST: { idx: -6, mid: 3, side: -0.01 },
+  CU: { idx: 0, mid: 1, side: -0.012 },
+  CH: { circle: true, idx: -12, mid: -4, ring: 3, pinky: 9, side: 0.014 },
+  FS: { idx: -24, mid: 16, fwd: 0.008 },
+};
+const gripSpec = id => ({ ...GRIP3D[id], view: PITCHES[id].grip.view });
 const PHASE_NAMES = ['세트', '레그킥', '스트라이드', '코킹', '릴리스', '팔로스루'];
 
 const DIFF_LABEL = ['', '입문', '쉬움', '보통', '어려움', '매우 어려움'];
@@ -435,6 +447,8 @@ let lastRanked = [];
 let watching = null;
 let slow = false;
 let paused = false;
+let motionMode = 'motion';
+const thumbs = {}; // 구종+손 → 3D 그립 이미지
 let stageOk = false;
 
 function moveText(mx, my) {
@@ -512,7 +526,10 @@ function render() {
       </div>
       <button type="button" class="btn watch" data-watch="${p.id}">▶ 투구 폼 보기</button>
       <div class="grip">
-        ${gripSvg(p.id, s.hand)}
+        <div class="grip-fig">
+          ${thumbs[p.id + s.hand] ? `<img src="${thumbs[p.id + s.hand]}" alt="${pt.ko} 그립 (3D)">` : gripSvg(p.id, s.hand)}
+          <button type="button" class="btn grip3d" data-grip="${p.id}">3D로 돌려 보기</button>
+        </div>
         <div><h5>그립 잡는 법</h5><ol>${pt.grip.steps.map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>
       </div>
     </article>`;
@@ -539,6 +556,16 @@ function stageLayout(sc, w, h) {
   return table[sc];
 }
 
+// 결과 카드에 넣을 3D 그립 이미지를 만듦 (이미 만든 것은 다시 쓰지 않음)
+function makeThumbs() {
+  if (!stageOk) return;
+  const need = lastRanked.map(p => p.id).filter(id => !thumbs[id + state.hand]);
+  if (!need.length) return;
+  const imgs = Stage.gripThumbs(need.map(gripSpec));
+  need.forEach((id, i) => { if (imgs[i]) thumbs[id + state.hand] = imgs[i]; });
+  render();
+}
+
 function goTo(n) {
   const prev = screen;
   screen = n;
@@ -551,11 +578,13 @@ function goTo(n) {
   if (n === 3 && prev !== 4) $('s3').scrollTop = 0;
   if (n !== 4) { watching = null; if (paused) setPaused(false); }
   if (stageOk) Stage.goTo(n);
+  if (n === 3) makeThumbs();
 }
 
 /* ───────────── 투구 동작 화면 ───────────── */
 
-function openMotion(id) {
+function openMotion(id, mode) {
+  if (mode) motionMode = mode;
   const p = lastRanked.find(x => x.id === id) || lastRanked[0];
   if (!p) return;
   const pt = PITCHES[p.id], mo = MOTION[p.id];
@@ -572,9 +601,15 @@ function openMotion(id) {
   setPhase(0);
   setPaused(false);
   if (screen !== 4) goTo(4);
+  $('mSteps').innerHTML = pt.grip.steps.map(t => `<li>${esc(t)}</li>`).join('');
+  $('s4').querySelector('.panel').dataset.mode = motionMode;
+  document.querySelectorAll('#mTabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.mode === motionMode));
   if (stageOk) {
-    Stage.setSpeed(slow ? 0.35 : 1);
-    Stage.playPitch({ turn: mo.turn, mx: p.move[0], my: p.move[1], color: pt.color, velo: v }, setPhase);
+    if (motionMode === 'grip') Stage.showGrip(gripSpec(p.id));
+    else {
+      Stage.setSpeed(slow ? 0.35 : 1);
+      Stage.playPitch({ turn: mo.turn, mx: p.move[0], my: p.move[1], color: pt.color, velo: v, grip: gripSpec(p.id) }, setPhase);
+    }
   }
 }
 
@@ -632,7 +667,9 @@ function init() {
   };
   cards.addEventListener('click', e => {
     const w = e.target.closest('[data-watch]');
-    if (w) { openMotion(w.dataset.watch); return; }
+    if (w) { openMotion(w.dataset.watch, 'motion'); return; }
+    const g3 = e.target.closest('[data-grip]');
+    if (g3) { openMotion(g3.dataset.grip, 'grip'); return; }
     toggle(e.target);
   });
   $('mChips').addEventListener('click', e => {
@@ -642,6 +679,10 @@ function init() {
   $('mReplay').addEventListener('click', () => { if (stageOk) Stage.replay(); setPhase(0); setPaused(false); });
   $('mPause').addEventListener('click', () => setPaused(!paused));
   bindOrbit();
+  $('mTabs').addEventListener('click', e => {
+    const b = e.target.closest('[data-mode]');
+    if (b && watching) openMotion(watching, b.dataset.mode);
+  });
   $('mSlow').addEventListener('click', () => {
     slow = !slow;
     $('mSlow').setAttribute('aria-pressed', slow);
@@ -660,6 +701,7 @@ function init() {
       document.body.classList.add('stage-ready');
       Stage.setPitcher({ angle: state.angle, hand: state.hand, height: state.height });
       Stage.goTo(screen);
+      if (screen === 3) makeThumbs();
     }).catch(() => document.body.classList.add('no-stage'));
   } catch (e) {
     document.body.classList.add('no-stage');

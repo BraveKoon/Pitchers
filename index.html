@@ -120,7 +120,12 @@
       <span class="abbr" id="mAbbr"></span>
       <div><h2 id="mName"></h2><p class="sub" id="mSub"></p></div>
     </div>
+    <div class="tabs" id="mTabs" role="tablist">
+      <button type="button" role="tab" data-mode="motion" aria-selected="true">투구 동작</button>
+      <button type="button" role="tab" data-mode="grip" aria-selected="false">3D 그립</button>
+    </div>
     <ol class="phases" id="phases" aria-label="투구 단계"></ol>
+    <div class="grip-steps"><strong>그립 잡는 법</strong><ol id="mSteps"></ol></div>
     <p class="cue"><strong>릴리스 요령</strong><span id="mCue"></span></p>
     <div class="chips" id="mChips" aria-label="다른 구종"></div>
     <div class="nav controls">
@@ -128,7 +133,8 @@
       <button type="button" class="btn ghost" id="mSlow" aria-pressed="false">슬로모션</button>
       <button type="button" class="btn primary" id="mReplay">다시 보기</button>
     </div>
-    <p class="hint">화면의 빈 곳을 끌면 투수를 360° 돌려 볼 수 있습니다.</p>
+    <p class="hint motion-only">화면의 빈 곳을 끌면 투수를 360° 돌려 볼 수 있습니다.</p>
+    <p class="hint grip-only">화면의 빈 곳을 끌면 손을 모든 방향에서 돌려 볼 수 있습니다.</p>
     <p class="hint wide-only">공의 궤적은 중력을 뺀 변화 방향이며, 잘 보이도록 크기를 과장했습니다.</p>
     <p class="hint no-stage-msg">이 기기에서는 3D 동작을 표시할 수 없습니다.</p>
   </div>
