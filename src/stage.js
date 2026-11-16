@@ -249,6 +249,17 @@ const KEYS = {
     armR(upper, B.clone().multiplyScalar(0.85).add(P.multiplyScalar(0.55)));
     armL(V(0.15, 0.05, 1), V(0.45, 0.15, 0.8));
   },
+  // 가속: 몸통이 먼저 돌고 팔꿈치가 앞서 나오며 전완은 뒤로 젖혀진 상태
+  accel(angle) {
+    const yaw = -16, c = Math.cos(rad(angle)), s = Math.sin(rad(angle));
+    trunk(yaw, 10 + (angle < 0 ? -angle * 0.35 : 0), leanOf(angle) * 0.85);
+    legs(V(0.09, -0.68, 0.73), V(0.01, -1, 0.03), V(-0.12, -0.85, -0.5), V(-0.03, -0.7, -0.7), V(0, -0.3, 1), V(-0.3, -0.85, -0.3));
+    const R = yawV(V(-1, 0, 0), yaw), B = yawV(V(0, 0, -1), yaw), Fw = yawV(F, yaw);
+    const upper = R.clone().multiplyScalar(c).add(U.clone().multiplyScalar(s)).add(Fw.multiplyScalar(0.22));
+    const P = U.clone().multiplyScalar(c).sub(R.clone().multiplyScalar(s));
+    armR(upper, upper.clone().multiplyScalar(0.45).add(B.multiplyScalar(0.8)).add(P.multiplyScalar(0.25)));
+    armL(V(0.4, -0.55, 0.45), V(-0.35, 0.45, 0.65));
+  },
   release(angle, turn) {
     const c = Math.cos(rad(angle)), s = Math.sin(rad(angle));
     const bend = 22 + (angle < 0 ? -angle * 0.7 : 0);
@@ -272,10 +283,11 @@ const KEYS = {
 // 시간(초, 1배속 기준)과 구간 이름
 const TIMELINE = [
   { t: 0.0, key: 'set' }, { t: 0.4, key: 'set' }, { t: 0.95, key: 'lift' }, { t: 1.4, key: 'stride' },
-  { t: 1.62, key: 'cock' }, { t: 1.74, key: 'release' }, { t: 2.15, key: 'follow' }, { t: 3.1, key: 'follow' }, { t: 3.7, key: 'set' },
+  { t: 1.6, key: 'cock' }, { t: 1.71, key: 'accel' }, { t: 1.79, key: 'release' }, { t: 2.2, key: 'follow' },
+  { t: 3.1, key: 'follow' }, { t: 3.7, key: 'set' },
 ];
-const PHASES = [0, 0.4, 0.95, 1.5, 1.7, 1.9]; // 세트, 레그킥, 스트라이드, 코킹, 릴리스, 팔로스루 시작 시각
-const RELEASE_T = 1.74;
+const PHASES = [0, 0.4, 0.95, 1.5, 1.73, 1.95]; // 세트, 레그킥, 스트라이드, 코킹, 릴리스, 팔로스루 시작 시각
+const RELEASE_T = 1.79;
 const FLIGHT_D = 3.2;      // 공이 날아가는 거리(모델 좌표, m)
 const BREAK_K = 0.022;     // 무브먼트 1cm당 표시 이동량(m) — 과장 표시
 
@@ -311,6 +323,8 @@ function pathAt(u) {
   return p.add(m.brk.clone().multiplyScalar(u * u));
 }
 
+const _s1 = new THREE.Quaternion(), _s2 = new THREE.Quaternion(), _s3 = new THREE.Quaternion();
+
 function stepMotion(dt) {
   const m = motion;
   m.time += dt * speed;
@@ -323,12 +337,28 @@ function stepMotion(dt) {
     for (const [b, q] of keys[0].quats) b.quaternion.slerpQuaternions(m.from.get(b), q, e);
     footOffset = m.fromFoot + (keys[0].foot - m.fromFoot) * e;
   } else {
+    // 키프레임 사이를 Catmull-Rom 스플라인으로 이어 각 키에서 멈추지 않고 속도가 연속되게 함
     let i = 0;
     while (i < keys.length - 2 && t >= keys[i + 1].t) i++;
-    const A = keys[i], Bk = keys[i + 1];
-    const e = smooth(clamp((t - A.t) / (Bk.t - A.t), 0, 1));
-    for (const [b, q] of A.quats) b.quaternion.slerpQuaternions(q, Bk.quats.get(b), e);
-    footOffset = A.foot + (Bk.foot - A.foot) * e;
+    const K1 = keys[i], K2 = keys[i + 1];
+    // 양 끝은 이웃 키를 대칭으로 두어 시작·끝 속도를 0으로 만듦
+    const K0 = i > 0 ? keys[i - 1] : K2, K3 = i + 2 < keys.length ? keys[i + 2] : K1;
+    const t1 = K1.t, t2 = K2.t;
+    const t0 = i > 0 ? K0.t : t1 - (t2 - t1), t3 = i + 2 < keys.length ? K3.t : t2 + (t2 - t1);
+    const a1 = (t - t0) / (t1 - t0), a2 = (t - t1) / (t2 - t1), a3 = (t - t2) / (t3 - t2);
+    const b1 = (t - t0) / (t2 - t0), b2 = (t - t1) / (t3 - t1);
+    for (const [b, q1] of K1.quats) {
+      const q0 = K0.quats.get(b), q2 = K2.quats.get(b), q3 = K3.quats.get(b);
+      _s1.slerpQuaternions(q0, q1, a1);
+      _s2.slerpQuaternions(q1, q2, a2);
+      _s3.slerpQuaternions(q2, q3, a3);
+      _s1.slerp(_s2, b1);
+      _s2.slerp(_s3, b2);
+      b.quaternion.slerpQuaternions(_s1, _s2, a2);
+    }
+    const f1 = K0.foot + (K1.foot - K0.foot) * a1, f2 = K1.foot + (K2.foot - K1.foot) * a2, f3 = K2.foot + (K3.foot - K2.foot) * a3;
+    const g1 = f1 + (f2 - f1) * b1, g2 = f2 + (f3 - f2) * b2;
+    footOffset = g1 + (g2 - g1) * a2;
   }
   model.position.y = footOffset;
   pivot.updateMatrixWorld(true);
@@ -563,6 +593,13 @@ export function playPitch(opts, onPhase) {
   if (swap) { sign = swap.sign; swap = null; }
   const a = state.angle;
   const keys = TIMELINE.map(k => ({ t: k.t, ...computePose(() => KEYS[k.key](a, opts.turn)) }));
+  // 이웃 키의 쿼터니언 부호를 맞춰 스플라인이 먼 길로 돌지 않게 함
+  for (let i = 1; i < keys.length; i++) {
+    for (const [b, q] of keys[i].quats) {
+      const prev = keys[i - 1].quats.get(b);
+      if (prev.dot(q) < 0) q.set(-q.x, -q.y, -q.z, -q.w);
+    }
+  }
   const from = new Map();
   for (const [b] of rest) from.set(b, b.quaternion.clone());
   motion = {
